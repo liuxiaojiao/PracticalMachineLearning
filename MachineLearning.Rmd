@@ -133,6 +133,8 @@ confusionMatrix(prediction_rf, cvset[,outcomeName])$overall[1]
 cm_rf <-confusionMatrix(prediction_rf, cvset[,outcomeName]) #Accuracy:0.888
 sam_err <- 1 - cm_rf$overall['Accuracy'] #The expected out of sample error is 0.112%.
 
+##Note:
+Based on the prediction accuracy and expected out of sample error. Choose gbm and rf.
 
 prediction_nnet <- predict.train(object=model_nnet,cvset[,predictors],type='raw')
 table(prediction_nnet)
@@ -170,8 +172,8 @@ varImp(object=model_rf)
 predDF <- data.frame(prediction_gbm,prediction_rf, cvset$classe) 
 comModFit <- train(cvset.classe ~., method = "rf", data=predDF)
 comPred <- predict(comModFit,predDF)
-confusionMatrix(comPred, cvset[,outcomeName])$overall[1] 
-#Accuracy:0.889
+cm_com <- confusionMatrix(comPred, cvset[,outcomeName]) #Accuracy: 0.889
+sam_err <- 1 - cm_com$overall['Accuracy'] #The expected out of sample error is 0.111%.
 ```
 
 ```
