@@ -1,0 +1,189 @@
+---
+title: "MachineLearning"
+author: "Diana_Liu"
+date: "February 1, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{Wearable device data}
+
+#load datasets
+training <- read.csv("H:/R_Coursera/pml-training.csv")
+testing <- read.csv("H:/R_Coursera/pml-testing.csv")
+```
+
+```
+set.seed(7)
+library(plyr)
+library(mlbench)
+library(caret)
+# prepare training set
+library(dplyr)
+training_subset <- select(training,contains("accel"))
+training_name <- training[,c(2,160)]
+training_use_pre <- cbind(training_subset,training_name)
+training_use <- training_use_pre[,-c(2,7,12,17)] #remove variables containing more than 80% missing
+sum(is.na(training_use))
+#0
+
+names(training_use)
+# [1] "total_accel_belt"     "accel_belt_x"        
+# [3] "accel_belt_y"         "accel_belt_z"        
+# [5] "total_accel_arm"      "accel_arm_x"         
+# [7] "accel_arm_y"          "accel_arm_z"         
+# [9] "total_accel_dumbbell" "accel_dumbbell_x"    
+# [11] "accel_dumbbell_y"     "accel_dumbbell_z"    
+# [13] "total_accel_forearm"  "accel_forearm_x"     
+# [15] "accel_forearm_y"      "accel_forearm_z"     
+# [17] "user_name"            "classe" 
+```
+
+```
+# prepare testing set
+testing_subset <- select(testing,contains("accel"))
+testing_name <- testing[,c(2,160)]
+testing_use_pre <- cbind(testing_subset,testing_name)
+testing_use <- testing_use_pre[,-c(2,7,12,17)] #remove variables containing more than 80% missing
+sum(is.na(testing_use))
+# 0
+```
+
+```
+#Splitting data using caret
+#Create cross-validation set from the training set to evaluate model
+#Splie training set into two parts based on outcome: 75% and 25%
+index <- createDataPartition(training_use$classe, p = 0.75, list=FALSE)
+trainset <- training_use[index,]
+cvset <- training_use[-index,]
+```
+
+```
+#Feature selection using rfe in Caret
+control <- rfeControl(functions = rfFuncs, method="repeatedcv", repeats=2, verbose=FALSE)
+outcomeName <- 'classe'
+predictors <- names(trainset)[!names(trainset) %in% outcomeName]
+class_pred <- rfe(trainset[,predictors], trainset[,outcomeName],rfeControl = control)
+class_pred
+
+# Top 5 parameters:accel_dumbbell_y, accel_forearm_x, 
+# accel_dumbbell_z, accel_arm_x, accel_belt_z.
+# Based on data instructions, the five parameters contains four major dimension:
+# forearm, arm, belt and dumbbell. Will use the five features in the modeling
+predictors <- c('accel_dumbbell_y','accel_forearm_x','accel_dumbbell_z','accel_arm_x','accel_belt_z')
+
+```
+
+```
+#Training models
+#parameter tuning uing Caret - gbm
+fitControl <- trainControl(method = 'repeatedcv',number=5, repeats=3) 
+#5-fold cv repeated 3 times
+model_gbm <- train(trainset[,predictors], trainset[,outcomeName],method='gbm',trControl = fitControl,verbose=FALSE)
+print(model_gbm)
+# The final values used for the model were n.trees = 150, interaction.depth = 3, shrinkage = 0.1
+# and n.minobsinnode = 10
+
+# Tunning Grids - gbm
+gbmGrid <- expand.grid(interaction.depth = c(1,5,9),
+                       n.trees = (1:30)*50,
+                       shrinkage = 0.1,
+                       n.minobsinnode = 20)
+nrow(gbmGrid)
+set.seed(888)
+model_gbm2 <- train(trainset[,predictors], trainset[,outcomeName], method='gbm',trControl = fitControl,verbose=FALSE,
+                    tuneGrid = gbmGrid)
+print(model_gbm2)
+#The final values used for the model were n.trees = 1500, interaction.depth = 9, shrinkage = 0.1
+#and n.minobsinnode = 20
+```
+
+```
+# try rf, nnet, lda for choosing the best model
+set.seed(888)
+model_rf <- train(trainset[,predictors], trainset[,outcomeName], trControl=fitControl, tuneLength = 4,method='rf')
+
+set.seed(888)
+model_nnet <- train(trainset[,predictors], trainset[,outcomeName], trControl=fitControl, tuneLength = 4,method='nnet')
+
+set.seed(888)
+model_lda <- train(trainset[,predictors], trainset[,outcomeName], trControl=fitControl, tuneLength = 4,method='lda')
+```
+
+```
+#Prediction on cross-validation set to choose the best model based on Accuracy
+prediction_gbm <- predict.train(object=model_gbm2,cvset[,predictors],type='raw')
+table(prediction_gbm)
+confusionMatrix(prediction_gbm, cvset[,outcomeName])$overall[1] 
+#Accuracy:0.862
+
+prediction_rf <- predict.train(object=model_rf,cvset[,predictors],type='raw')
+table(prediction_rf)
+confusionMatrix(prediction_rf, cvset[,outcomeName])$overall[1] 
+#Accuracy:0.888
+
+prediction_nnet <- predict.train(object=model_nnet,cvset[,predictors],type='raw')
+table(prediction_nnet)
+confusionMatrix(prediction_nnet, cvset[,outcomeName])$overall[1] 
+#Accuracy: 0.386
+
+prediction_lda <- predict.train(object=model_lda,cvset[,predictors],type='raw')
+table(prediction_lda)
+confusionMatrix(prediction_lda, cvset[,outcomeName])$overall[1] 
+#Accuracy:0.401
+```
+```
+#check variable importance estimation for individual models
+varImp(object=model_gbm2)
+#gbm variable importance
+#                 Overall
+#accel_belt_z      100.00
+#accel_dumbbell_z   59.46
+#accel_dumbbell_y   53.60
+#accel_arm_x        16.60
+#accel_forearm_x     0.00
+
+varImp(object=model_rf)
+#rf variable importance
+#                 Overall
+#accel_belt_z      100.00
+#accel_dumbbell_z   84.56
+#accel_dumbbell_y   77.77
+#accel_arm_x        22.02
+#accel_forearm_x     0.00
+```
+
+```
+#combine two models
+predDF <- data.frame(prediction_gbm,prediction_rf, cvset$classe) 
+comModFit <- train(cvset.classe ~., method = "rf", data=predDF)
+comPred <- predict(comModFit,predDF)
+confusionMatrix(comPred, cvset[,outcomeName])$overall[1] 
+#Accuracy:0.889
+```
+
+```
+#Prediction on testing dataset (testing dataset doesn't contain dependent variable "classe")
+#Choose model "gbm + rf" based on Accuracy of prediction (Accuracy=0.889)
+prediction_testing <- predict.train(object=model_gbm2,testing_use[,predictors],type='raw')
+testing_use_ensemble <- cbind(testing_use[,predictors],prediction_testing)
+prediction_testing2 <- predict.train(object=model_rf,testing_use_ensemble,type='raw')
+table(prediction_testing2)
+prediction_testing2
+
+#A B C D E 
+#7 7 3 2 1 
+
+prediction_testing2
+# [1] B A B A A C D D A A B C B A E B A B C B
+#Levels: A B C D E
+```
